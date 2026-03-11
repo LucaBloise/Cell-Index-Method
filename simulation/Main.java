@@ -20,14 +20,18 @@ import java.util.Locale;
  * Entry point for the Cell-Index-Method / Brute-Force neighbour search.
  *
  * Usage (run from the simulation/ directory):
- *   java simulation.Main <N> <L> <M> <rc> <method> <periodic>
+ *   java simulation.Main <N> <L> <M> <rc> <method> <periodic> <r>
+ *   java simulation.Main <N> <L> <M> <rc> <method> <periodic> <rMin> <rMax>
  *
- *   N        – number of particles              (integer  > 0)
- *   L        – side length of the square area   (float    > 0)
- *   M        – cells per side  (L/M must be ≥ rc; periodic mode also requires M ≥ 3)
- *   rc       – interaction radius cut-off       (float    > 0)
+ *   N        – number of particles                         (integer  > 0)
+ *   L        – side length of the square area              (float    > 0)
+ *   M        – cells per side  (L/M must be ≥ rc + 2*rMax; periodic mode also requires M ≥ 3)
+ *   rc       – interaction radius cut-off                  (float   >= 0)
  *   method   – CIM  (Cell Index Method)  |  BF  (Brute Force O(N²))
- *   periodic – true  (toroidal / wrap-around)   |  false  (hard walls)
+ *   periodic – true  (toroidal / wrap-around)  |  false  (hard walls)
+ *   r        – fixed radius for all particles              (float   >= 0)
+ *   rMin     – minimum radius, drawn from Uniform[rMin, rMax]  (float >= 0)
+ *   rMax     – maximum radius, drawn from Uniform[rMin, rMax]  (float >= rMin)
  *
  * Output (written to outputs/<executionId>/ inside the working directory):
  *   output.txt     – one line per particle: id TAB space-separated neighbour ids
@@ -38,7 +42,9 @@ public class Main {
     public static void main(String[] args) {
 
         // ── 1. Parse & validate arguments ────────────────────────────────────
-        if (args.length < 6) {
+        //   7 args: N L M rc method periodic r          (fixed radius)
+        //   8 args: N L M rc method periodic rMin rMax  (random radius in [rMin, rMax])
+        if (args.length < 7) {
             printUsage();
             System.exit(1);
         }
@@ -48,6 +54,7 @@ public class Main {
         int     M;
         boolean useCIM;
         boolean periodic;
+        float   rMin, rMax;
 
         try {
             N  = Integer.parseInt(args[0]);
@@ -65,6 +72,9 @@ public class Main {
             useCIM   = methodArg.equals("CIM");
             periodic = Boolean.parseBoolean(args[5]);
 
+            rMin = Float.parseFloat(args[6]);
+            rMax = (args.length >= 8) ? Float.parseFloat(args[7]) : rMin;
+
         } catch (NumberFormatException e) {
             System.err.println("Error parsing arguments: " + e.getMessage());
             printUsage();
@@ -75,7 +85,7 @@ public class Main {
         // ── 2. Build the area (populates N random particles internally) ───────
         Area area;
         try {
-            area = new Area(L, rc, M, N, periodic);
+            area = new Area(L, rc, M, N, periodic, rMin, rMax);
         } catch (IllegalArgumentException e) {
             System.err.println("Invalid parameters: " + e.getMessage());
             System.exit(1);
@@ -110,7 +120,7 @@ public class Main {
         // ── 5. Write result files ─────────────────────────────────────────────
         writeOutputFile    (outputDir, area);
         writePropertiesFile(outputDir, executionId, N, L, M, rc,
-                            useCIM, periodic, elapsedNs, area);
+                            useCIM, periodic, rMin, rMax, elapsedNs, area);
 
         System.out.println("Results written to: " + outputDir.toAbsolutePath());
     }
@@ -159,6 +169,7 @@ public class Main {
     private static void writePropertiesFile(Path dir, String executionId,
                                             int N, float L, int M, float rc,
                                             boolean useCIM, boolean periodic,
+                                            float rMin, float rMax,
                                             long elapsedNs, Area area) {
         Path file = dir.resolve("properties.txt");
 
@@ -186,6 +197,11 @@ public class Main {
             pw.printf ("M  (cells / side) : %d%n",   M);
             pw.printf ("rc (cutoff)       : %.4f%n", rc);
             pw.printf ("Cell size (L/M)   : %.4f%n", L / (float) M);
+            if (rMin == rMax) {
+                pw.printf("Radius mode       : Fixed  (r = %.4f)%n", rMin);
+            } else {
+                pw.printf("Radius mode       : Random uniform  [%.4f, %.4f]%n", rMin, rMax);
+            }
             pw.println();
             pw.println("--- Algorithm ---");
             pw.println("Method            : " + (useCIM
@@ -207,14 +223,17 @@ public class Main {
     // ─────────────────────────────────────────────────────────────────────────
     private static void printUsage() {
         System.out.println();
-        System.out.println("Usage: java simulation.Main <N> <L> <M> <rc> <method> <periodic>");
+        System.out.println("Usage: java simulation.Main <N> <L> <M> <rc> <method> <periodic> <r>");
+        System.out.println("   or: java simulation.Main <N> <L> <M> <rc> <method> <periodic> <rMin> <rMax>");
         System.out.println();
-        System.out.println("  N        – number of particles              (integer > 0)");
-        System.out.println("  L        – side length of the square area   (float > 0)");
-        System.out.println("  M        – cells per side (L/M must be >= rc; periodic needs M >= 3)");
-        System.out.println("  rc       – interaction radius cut-off       (float > 0)");
+        System.out.println("  N        – number of particles                    (integer > 0)");
+        System.out.println("  L        – side length of the square area          (float > 0)");
+        System.out.println("  M        – cells per side  (L/M >= rc + 2*rMax;  periodic needs M >= 3)");
+        System.out.println("  rc       – interaction radius cut-off              (float >= 0)");
         System.out.println("  method   – CIM  (Cell Index Method)  |  BF  (Brute Force)");
         System.out.println("  periodic – true  (toroidal)  |  false  (hard walls)");
+        System.out.println("  r        – fixed radius for all particles          (float >= 0)");
+        System.out.println("  rMin rMax– radius drawn from Uniform[rMin, rMax]   (floats, rMin >= 0)");
         System.out.println();
         System.out.println("Run from inside the simulation/ directory so that");
         System.out.println("outputs are written to simulation/outputs/<executionId>/");

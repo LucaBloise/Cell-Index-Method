@@ -7,18 +7,31 @@ import java.util.Set;
 public class Area {
     private final float L;        // side length of the square area
     private final float rc;       // interaction radius cut-off
-    private final int M;          // number of cells per side  (must satisfy L/M >= rc)
+    private final int M;          // number of cells per side
     private final int N;          // number of particles
     private final boolean periodic; // true → toroidal (wrap-around), false → hard walls
-    private Set<Particle> particleSet = new HashSet<>();
+    private final float rMin;     // minimum particle radius (= rMax for fixed radius)
+    private final float rMax;     // maximum particle radius
+    private final Set<Particle> particleSet = new HashSet<>();
 
     @SuppressWarnings("unchecked")
     private Set<Particle>[][] grid = new HashSet[0][0];
 
-    public Area(float L, float rc, int M, int N, boolean periodic) {
-        if (L / M < rc) {
+    /**
+     * @param rMin  minimum particle radius; pass the same value as rMax for a fixed radius
+     * @param rMax  maximum particle radius; each particle gets a uniform random value in [rMin, rMax]
+     */
+    public Area(float L, float rc, int M, int N, boolean periodic, float rMin, float rMax) {
+        if (rMin < 0)    throw new IllegalArgumentException("rMin must be >= 0");
+        if (rMax < rMin) throw new IllegalArgumentException("rMax must be >= rMin");
+
+        // The cell size must cover the full interaction range.
+        // Border-to-border distance <= rc means center-to-center <= rc + r1 + r2.
+        // The worst case is rc + 2*rMax, so we need: L/M >= rc + 2*rMax.
+        float minCellSize = rc + 2 * rMax;
+        if (L / M < minCellSize) {
             throw new IllegalArgumentException(
-                "Cell size (L/M = " + (L / M) + ") must be >= rc (" + rc + ")");
+                "Cell size (L/M = " + (L / M) + ") must be >= rc + 2*rMax (" + minCellSize + ")");
         }
         // With periodic boundaries and M < 3 the "forward" sweep wraps back onto
         // already-processed cells, so every cross-boundary pair would be registered
@@ -32,6 +45,8 @@ public class Area {
         this.M        = M;
         this.N        = N;
         this.periodic = periodic;
+        this.rMin     = rMin;
+        this.rMax     = rMax;
         this.populate();
     }
 
@@ -49,19 +64,21 @@ public class Area {
             do {
                 x = random.nextFloat() * L;
                 y = random.nextFloat() * L;
-                // Pack both 32-bit float bit patterns into one 64-bit key
                 posKey = ((long) Float.floatToIntBits(x) << 32)
                        | (Float.floatToIntBits(y) & 0xFFFFFFFFL);
             } while (usedPositions.contains(posKey));
 
             usedPositions.add(posKey);
-            particleSet.add(new Particle(x, y, 0f));
+
+            // Fixed radius when rMin == rMax, otherwise uniform random in [rMin, rMax]
+            float r = (rMin == rMax) ? rMin : rMin + random.nextFloat() * (rMax - rMin);
+            particleSet.add(new Particle(x, y, r));
         }
     }
 
-    public Set<Particle> getParticleSet() {
-        return particleSet;
-    }
+    public Set<Particle> getParticleSet() { return particleSet; }
+    public float getRMin() { return rMin; }
+    public float getRMax() { return rMax; }
 
     // ------------------------------------------------------------------ //
     //  Distance helper                                                     //
@@ -69,8 +86,7 @@ public class Area {
 
     /**
      * Returns the relevant distance between two particles.
-     * <p>
-     * Walls  → straight-line Euclidean distance.
+     * Walls    → straight-line Euclidean distance.
      * Periodic → minimum-image convention: for each axis we take the shorter
      *            of the direct path and the wrapped path through the boundary.
      */
@@ -80,9 +96,17 @@ public class Area {
         }
         float dx = Math.abs(p1.getX() - p2.getX());
         float dy = Math.abs(p1.getY() - p2.getY());
-        if (dx > L / 2f) dx = L - dx;   // shorter path wraps around
+        if (dx > L / 2f) dx = L - dx;
         if (dy > L / 2f) dy = L - dy;
         return (float) Math.sqrt(dx * dx + dy * dy);
+    }
+
+    /**
+     * Border-to-border distance: center-to-center distance minus both radii.
+     * This is the value that must be <= rc for two particles to be neighbors.
+     */
+    private float borderDist(Particle p1, Particle p2) {
+        return dist(p1, p2) - p1.getR() - p2.getR();
     }
 
     // ------------------------------------------------------------------ //
@@ -96,7 +120,7 @@ public class Area {
         for (Particle p1 : particleSet) {
             for (Particle p2 : particleSet) {
                 // dist() applies minimum-image convention when periodic
-                if (p1 != p2 && dist(p1, p2) <= rc) {
+                if (p1 != p2 && borderDist(p1, p2) <= rc) {
                     p1.addNeighbour(p2);
                 }
             }
@@ -146,19 +170,17 @@ public class Area {
 
                     // ── Same cell (both directions via id guard) ──────────────
                     for (Particle p2 : grid[i][j]) {
-                        if (p1.getId() < p2.getId() && dist(p1, p2) <= rc) {
+                        if (p1.getId() < p2.getId() && borderDist(p1, p2) <= rc) {
                             p1.addNeighbour(p2);
                             p2.addNeighbour(p1);
                         }
                     }
 
                     // ── Right (i, j+1) ───────────────────────────────────────
-                    // Walls:    only if there is a real cell to the right.
-                    // Periodic: always; j+1 wraps to 0 at the right edge.
                     if (periodic || j + 1 < M) {
                         int nj = (j + 1) % M;
                         for (Particle p2 : grid[i][nj]) {
-                            if (dist(p1, p2) <= rc) {
+                            if (borderDist(p1, p2) <= rc) {
                                 p1.addNeighbour(p2);
                                 p2.addNeighbour(p1);
                             }
@@ -169,7 +191,7 @@ public class Area {
                     if (periodic || i + 1 < M) {
                         int ni = (i + 1) % M;
                         for (Particle p2 : grid[ni][j]) {
-                            if (dist(p1, p2) <= rc) {
+                            if (borderDist(p1, p2) <= rc) {
                                 p1.addNeighbour(p2);
                                 p2.addNeighbour(p1);
                             }
@@ -181,7 +203,7 @@ public class Area {
                         int ni = (i + 1) % M;
                         int nj = (j + 1) % M;
                         for (Particle p2 : grid[ni][nj]) {
-                            if (dist(p1, p2) <= rc) {
+                            if (borderDist(p1, p2) <= rc) {
                                 p1.addNeighbour(p2);
                                 p2.addNeighbour(p1);
                             }
@@ -193,7 +215,7 @@ public class Area {
                         int ni = (i + 1) % M;
                         int nj = (j - 1 + M) % M;
                         for (Particle p2 : grid[ni][nj]) {
-                            if (dist(p1, p2) <= rc) {
+                            if (borderDist(p1, p2) <= rc) {
                                 p1.addNeighbour(p2);
                                 p2.addNeighbour(p1);
                             }
