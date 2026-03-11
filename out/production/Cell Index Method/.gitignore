@@ -15,6 +15,3 @@ target/
 # IntelliJ
 .idea/
 *.iml
-
-# Output Files
-outputs/
