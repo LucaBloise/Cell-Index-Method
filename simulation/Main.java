@@ -34,7 +34,7 @@ import java.util.Locale;
  *   rMax     – maximum radius, drawn from Uniform[rMin, rMax]  (float >= rMin)
  *
  * Output (written to outputs/<executionId>/ inside the working directory):
- *   output.txt     – one line per particle: id TAB space-separated neighbour ids
+ *   output.txt     – one line per particle: id TAB x TAB y TAB r TAB space-separated neighbour ids
  *   properties.txt – all run parameters, algorithm choice, and timing
  */
 public class Main {
@@ -128,7 +128,7 @@ public class Main {
     // ─────────────────────────────────────────────────────────────────────────
     // output.txt
     //   One line per particle (sorted by id), formatted as:
-    //   <particle_id>\t<neighbour_id_1> <neighbour_id_2> ...
+    //   <particle_id>\t<x>\t<y>\t<r>\t<neighbour_id_1> <neighbour_id_2> ...
     //
     //   The neighbours listed are those whose border-to-border distance from
     //   the particle is ≤ rc.  (Border-to-border = center-to-center when r = 0.)
@@ -151,7 +151,10 @@ public class Main {
                 Collections.sort(neighbourIds);
 
                 StringBuilder sb = new StringBuilder();
-                sb.append(p.getId()).append('\t');
+                sb.append(p.getId()).append('\t')
+                  .append(p.getX()).append('\t')
+                  .append(p.getY()).append('\t')
+                  .append(p.getR()).append('\t');
                 for (int i = 0; i < neighbourIds.size(); i++) {
                     if (i > 0) sb.append(' ');
                     sb.append(neighbourIds.get(i));
