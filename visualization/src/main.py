@@ -37,16 +37,29 @@ from matplotlib.widgets import CheckButtons
 # ─────────────────────────────────────────────────────────────────────────────
 
 def find_latest_output_dir() -> str:
-    """Return the most-recent run directory under simulation/outputs/."""
+    """Return the most-recent valid simulation run directory under outputs/."""
     # visualization/src/main.py  →  up two levels → project root
     project_root = os.path.dirname(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     )
     outputs_dir = os.path.join(project_root, "simulation", "outputs")
-    runs = sorted(glob.glob(os.path.join(outputs_dir, "*")))
-    if not runs:
-        raise FileNotFoundError(f"No run directories found in: {outputs_dir}")
-    return runs[-1]
+    candidates = []
+
+    for run_dir in glob.glob(os.path.join(outputs_dir, "*")):
+        if not os.path.isdir(run_dir):
+            continue
+        output_path = os.path.join(run_dir, "output.txt")
+        props_path = os.path.join(run_dir, "properties.txt")
+        if os.path.exists(output_path) and os.path.exists(props_path):
+            candidates.append(run_dir)
+
+    if not candidates:
+        raise FileNotFoundError(
+            f"No valid run directories found in: {outputs_dir}. "
+            "Expected each run directory to contain output.txt and properties.txt."
+        )
+
+    return sorted(candidates)[-1]
 
 
 def parse_properties(props_path: str) -> dict:
