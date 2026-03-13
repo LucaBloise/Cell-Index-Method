@@ -8,7 +8,6 @@ and generates two figures:
   Figure 2 — Execution time vs M  (N fixed)
 
 Each figure shows both CIM and BF with mean ± 1 std error bars.
-Log scale is applied automatically when the range spans more than one decade.
 
 Usage:
     python benchmark_plot.py
@@ -51,14 +50,6 @@ MARKERS = {"CIM": "o",       "BF": "s"}
 LABELS  = {"CIM": "Cell Index Method (CIM)", "BF": "Brute Force (BF)"}
 
 
-def _should_log(series: "pd.Series") -> bool:
-    """Return True if the values span more than one order of magnitude."""
-    valid = series[series > 0]
-    if len(valid) < 2:
-        return False
-    return valid.max() / valid.min() > 10
-
-
 def _add_subplot(ax, data: "pd.DataFrame", x_col: str, x_label: str, title: str) -> None:
     """Draw CIM and BF error-bar lines on *ax* for the given sweep data."""
     for method in ["CIM", "BF"]:
@@ -83,12 +74,6 @@ def _add_subplot(ax, data: "pd.DataFrame", x_col: str, x_label: str, title: str)
     ax.set_title(title, fontsize=10)
     ax.legend(fontsize=9)
     ax.grid(True, alpha=0.3, which="both")
-
-    # Auto log scale
-    all_means = data["mean_ms"]
-    if _should_log(all_means):
-        ax.set_yscale("log")
-        ax.set_xscale("log")
 
 
 def plot_benchmark(csv_path: str) -> None:

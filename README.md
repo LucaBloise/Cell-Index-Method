@@ -66,6 +66,7 @@ para evitar doble contabilizacion en el barrido hacia adelante con wrap-around.
 	- `output.txt`: vecinos por particula.
 	- `properties.txt`: parametros y tiempos.
 - Benchmark de eficiencia (`N` sweep y `M` sweep), con promedio y desvio estandar.
+- Benchmark adicional de grilla (`N x M`) solo para CIM, con promedio y desvio estandar.
 - Visualizacion interactiva de particulas y vecinos.
 - Plot de benchmark con ambos metodos y escala log automatica si corresponde.
 
@@ -75,6 +76,7 @@ para evitar doble contabilizacion en el barrido hacia adelante con wrap-around.
 simulation/
 	Main.java
 	Benchmark.java
+	CIMGridBenchmark.java
 	model/
 		Area.java
 		Particle.java
@@ -84,6 +86,7 @@ visualization/
 	src/
 		main.py
 		benchmark_plot.py
+		cim_grid_plot.py
 ```
 
 ## 5. Como compilar y ejecutar (Windows + PowerShell)
@@ -92,7 +95,7 @@ visualization/
 
 ```powershell
 cd .\simulation
-javac -d .. model\*.java Main.java Benchmark.java
+javac -d .. model\*.java Main.java Benchmark.java CIMGridBenchmark.java
 ```
 
 ### 5.2 Ejecutar simulacion puntual (Main)
@@ -145,6 +148,35 @@ Para cada configuracion se hace warm-up y luego multiples corridas para calcular
 - tiempo promedio (ms)
 - desvio estandar muestral (ms)
 
+### 5.4 Ejecutar benchmark de grilla CIM (N x M)
+
+Este benchmark implementa el barrido pedido para estudiar eficiencia de CIM en funcion de `N` y `M`.
+
+```powershell
+java -cp .. simulation.CIMGridBenchmark
+```
+
+Genera:
+
+```text
+simulation/outputs/benchmark/cim_grid_results.csv
+```
+
+Configuracion actual del barrido:
+
+- Parametros fijos: `L=20`, `rc=1`, `ri ~ U[0.23, 0.26]`, `periodic=false`.
+- `N`: `100, 300, 500, 800, 1000`.
+- `M`: `3, 5, 7, 9, 11, 13`.
+- Por cada combinacion `(N, M)`:
+	- `K_WARMUP = 3` corridas de calentamiento (descartadas).
+	- `K_RUNS = 15` corridas medidas.
+
+En el CSV:
+
+- `mean_ms`: promedio sobre las 15 corridas medidas.
+- `std_ms`: desvio estandar muestral sobre esas 15 corridas.
+- `status`: `ok`, `invalid` o `failed`.
+
 ## 6. Visualizacion (punto 1 y 6)
 
 ### 6.1 Instalar dependencias de Python
@@ -185,6 +217,21 @@ python benchmark_plot.py
 ```
 
 Muestra CIM y BF en la misma figura, con barras de error y escala log automatica cuando hay diferencias de ordenes de magnitud.
+
+### 6.4 Graficar benchmark de grilla CIM (solo M en eje X)
+
+Desde `visualization/src/`:
+
+```powershell
+python cim_grid_plot.py
+```
+
+Genera una unica figura con:
+
+- eje X: `M`
+- eje Y: tiempo de ejecucion (ms)
+- una curva por cada `N`
+- barras de error usando `std_ms` (desvio estandar)
 
 ## 7. Formato de I/O utilizado
 
@@ -247,4 +294,5 @@ Flujo sugerido rapido:
 3. Mostrar `output.txt`/`properties.txt`.
 4. Visualizar particula y vecinos con `python main.py`.
 5. Correr `Benchmark` y graficar `python benchmark_plot.py`.
-6. Variar `M` y contrastar con el criterio de `M` optimo.
+6. Correr `CIMGridBenchmark` y graficar `python cim_grid_plot.py`.
+7. Variar `M` y contrastar con el criterio de `M` optimo.
