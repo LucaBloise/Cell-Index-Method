@@ -56,13 +56,18 @@ public class Area {
 
         // Rejection sampling without overlaps.
         // Touching is allowed; overlap means center distance < (r1 + r2).
-        final int maxAttemptsPerParticle = Math.max(10_000, N * 50);
+        final int maxAttemptsPerParticle = Math.max(1_000_000, N * 100);
+        final float minAreaOccupied = (N * (float) Math.PI * rMin * rMax) / 0.9069f;
+
+        if (minAreaOccupied > L * L) {
+            throw new IllegalArgumentException("Particles will be unconfortable! Try increasing L or reducing number of particles so they can all enter at once");
+        }
 
         for (int i = 0; i < N; i++) {
             // Fixed radius when rMin == rMax, otherwise uniform random in [rMin, rMax]
             float r = (rMin == rMax) ? rMin : rMin + random.nextFloat() * (rMax - rMin);
-
             boolean placed = false;
+
             for (int attempt = 0; attempt < maxAttemptsPerParticle; attempt++) {
                 float x;
                 float y;

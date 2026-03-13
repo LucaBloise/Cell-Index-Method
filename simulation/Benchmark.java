@@ -39,7 +39,7 @@ public class Benchmark {
     // M must satisfy L/M >= RC + 2*RMAX = 1.52  → M <= 13.
     // M=5 gives cell_size=4 which comfortably satisfies the constraint.
     static final int   M_FIXED  = 10;
-    static final int[] N_VALUES = {50, 100, 200, 500, 1_000, 2_000, 5_000};
+    static final int[] N_VALUES = {10, 25, 50, 100, 200, 500, 1_000};
 
     // BF is O(N²); skip it above this N to keep total benchmark runtime sane.
     static final int BF_MAX_N = 10_000;
