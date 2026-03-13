@@ -1,5 +1,3 @@
-package simulation;
-
 import simulation.model.Area;
 
 import java.io.IOException;

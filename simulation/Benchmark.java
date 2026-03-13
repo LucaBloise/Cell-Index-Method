@@ -10,14 +10,20 @@ import java.nio.file.Paths;
 import java.util.Locale;
 
 /**
- * Efficiency benchmark for the Cell Index Method vs Brute Force.
+ * Efficiency benchmark for Cell Index Method vs Brute Force
+ * under constant particle density.
  *
- * Fixed parameters:  L = 20, rc = 1, ri ~ U[0.23, 0.26], periodic = false
+ * Fixed parameters: rc = 1, ri ~ U[0.23, 0.26], periodic = false
  *
- * Study 1 – N sweep: vary N with M fixed at M_FIXED
- * Study 2 – M sweep: vary M with N fixed at N_FIXED
+ * Constant density setup:
+ *   rho = N0 / L0^2 with N0 = 500 and L0 = 20
+ *   For each N in N_VALUES:
+ *     L = sqrt(N / rho)
+ *     M = floor(L / (rc + 2*rMax))   (largest valid M)
  *
- * For each (N, M, method) configuration:
+ * Study – N sweep at constant density: vary N and scale L accordingly.
+ *
+ * For each (N, L, M, method) configuration:
  *   • K_WARMUP runs are performed and discarded (JVM warm-up)
  *   • K_RUNS  runs are timed; each uses a fresh random particle population
  *   → mean and sample std-dev of elapsed time (ms) are recorded
@@ -30,24 +36,21 @@ import java.util.Locale;
 public class Benchmark {
 
     // ── Fixed simulation parameters ──────────────────────────────────────────
-    static final float L    = 20.0f;
     static final float RC   = 1.0f;
     static final float RMIN = 0.23f;
     static final float RMAX = 0.26f;
+    static final boolean PERIODIC = false;
 
-    // ── N sweep configuration ────────────────────────────────────────────────
-    // M must satisfy L/M >= RC + 2*RMAX = 1.52  → M <= 13.
-    // M=5 gives cell_size=4 which comfortably satisfies the constraint.
-    static final int   M_FIXED  = 10;
-    static final int[] N_VALUES = {10, 25, 50, 100, 200, 500, 1_000};
+    // ── Constant-density reference ───────────────────────────────────────────
+    static final int   N0 = 500;
+    static final float L0 = 20.0f;
+    static final float DENSITY = N0 / (L0 * L0); // rho = N / L^2
 
-    // BF is O(N²); skip it above this N to keep total benchmark runtime sane.
-    static final int BF_MAX_N = 10_000;
+    // ── N sweep configuration at fixed rho ───────────────────────────────────
+    static final int[] N_VALUES = {100, 200, 500, 1_000, 2_000};
 
-    // ── M sweep configuration ────────────────────────────────────────────────
-    // Valid range: M in [1, 13].  M=1 → all particles in one cell (CIM ≈ BF).
-    static final int   N_FIXED  = 500;
-    static final int[] M_VALUES = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13};
+    // BF is O(N²); skip very large N so the benchmark always finishes quickly.
+    static final int BF_MAX_N = 2_000;
 
     // ── Benchmark settings ───────────────────────────────────────────────────
     static final int K_WARMUP = 3;   // discarded warm-up runs
@@ -64,11 +67,22 @@ public class Benchmark {
         try (PrintWriter pw = new PrintWriter(Files.newBufferedWriter(csvFile))) {
 
             // CSV header
-            pw.println("study,method,N,M,k_runs,mean_ms,std_ms");
+            pw.println("study,method,N,L,density,M,k_runs,mean_ms,std_ms");
 
-            // ── Study 1: N sweep ────────────────────────────────────────────
-            System.out.println("=== Study 1: N sweep  (M fixed = " + M_FIXED + ") ===");
+            // ── Study: N sweep at constant density ─────────────────────────
+            System.out.printf(Locale.ROOT,
+                    "=== Constant-density sweep ===%n" +
+                    "rho = %.5f (from N0=%d, L0=%.2f), rc=%.2f, r in [%.2f, %.2f]%n",
+                    DENSITY, N0, L0, RC, RMIN, RMAX);
+
             for (int N : N_VALUES) {
+                float L = (float) Math.sqrt(N / DENSITY);
+                int M = chooseMaxValidM(L);
+                float cellSize = L / M;
+
+                System.out.printf(Locale.ROOT,
+                        "%nN=%d  -> L=%.4f, M=%d, cell_size=%.4f%n", N, L, M, cellSize);
+
                 for (boolean useCIM : new boolean[]{true, false}) {
                     String method = useCIM ? "CIM" : "BF";
 
@@ -78,33 +92,11 @@ public class Benchmark {
                         continue;
                     }
 
-                    double[] stats = benchmarkConfig(N, M_FIXED, useCIM);
+                        double[] stats = benchmarkConfig(N, L, M, useCIM);
                     System.out.printf("  N=%-5d  M=%-3d  %-3s  mean=%8.4f ms  std=%8.4f ms%n",
-                            N, M_FIXED, method, stats[0], stats[1]);
-                    pw.printf(Locale.ROOT, "N_sweep,%s,%d,%d,%d,%.6f,%.6f%n",
-                            method, N, M_FIXED, K_RUNS, stats[0], stats[1]);
-                }
-            }
-
-            // ── Study 2: M sweep ────────────────────────────────────────────
-            System.out.println("\n=== Study 2: M sweep  (N fixed = " + N_FIXED + ") ===");
-            for (int M : M_VALUES) {
-                float cellSize    = L / M;
-                float minCellSize = RC + 2 * RMAX;
-                if (cellSize < minCellSize) {
-                    System.out.printf(
-                        "  M=%-3d  [skipped — cell size %.4f < required %.4f]%n",
-                        M, cellSize, minCellSize);
-                    continue;
-                }
-
-                for (boolean useCIM : new boolean[]{true, false}) {
-                    String method = useCIM ? "CIM" : "BF";
-                    double[] stats = benchmarkConfig(N_FIXED, M, useCIM);
-                    System.out.printf("  N=%-5d  M=%-3d  %-3s  mean=%8.4f ms  std=%8.4f ms%n",
-                            N_FIXED, M, method, stats[0], stats[1]);
-                    pw.printf(Locale.ROOT, "M_sweep,%s,%d,%d,%d,%.6f,%.6f%n",
-                            method, N_FIXED, M, K_RUNS, stats[0], stats[1]);
+                            N, M, method, stats[0], stats[1]);
+                    pw.printf(Locale.ROOT, "constant_density,%s,%d,%.6f,%.6f,%d,%d,%.6f,%.6f%n",
+                            method, N, L, DENSITY, M, K_RUNS, stats[0], stats[1]);
                 }
             }
         }
@@ -114,20 +106,20 @@ public class Benchmark {
 
     /**
      * Performs K_WARMUP discarded runs then K_RUNS timed runs for a given
-     * (N, M, method) configuration.  Each run uses a fresh random population.
+     * (N, L, M, method) configuration. Each run uses a fresh random population.
      *
      * @return [mean_ms, sample_std_ms]
      */
-    private static double[] benchmarkConfig(int N, int M, boolean useCIM) {
+    private static double[] benchmarkConfig(int N, float L, int M, boolean useCIM) {
         // Warm-up: let the JIT compile the hot path
         for (int i = 0; i < K_WARMUP; i++) {
-            runOnce(N, M, useCIM);
+            runOnce(N, L, M, useCIM);
         }
 
         // Timed runs
         double[] times = new double[K_RUNS];
         for (int i = 0; i < K_RUNS; i++) {
-            times[i] = runOnce(N, M, useCIM) / 1_000_000.0;  // ns → ms
+            times[i] = runOnce(N, L, M, useCIM) / 1_000_000.0;  // ns → ms
         }
 
         // Mean
@@ -147,10 +139,16 @@ public class Benchmark {
      * Creates a fresh Area (new random particle population), runs the chosen
      * algorithm, and returns the elapsed time in nanoseconds.
      */
-    private static long runOnce(int N, int M, boolean useCIM) {
-        Area area = new Area(L, RC, M, N, false, RMIN, RMAX);
+    private static long runOnce(int N, float L, int M, boolean useCIM) {
+        Area area = new Area(L, RC, M, N, PERIODIC, RMIN, RMAX);
         return useCIM
                 ? area.neighboursCellIndexMethod()
                 : area.neighboursBruteForce();
+    }
+
+    private static int chooseMaxValidM(float L) {
+        float minCellSize = RC + 2 * RMAX;
+        int maxValidM = (int) Math.floor(L / minCellSize);
+        return Math.max(1, maxValidM);
     }
 }

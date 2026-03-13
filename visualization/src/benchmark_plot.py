@@ -2,10 +2,10 @@
 Benchmark Plotter
 =================
 Reads simulation/outputs/benchmark/results.csv produced by Benchmark.java
-and generates two figures:
+and generates plots depending on the study present in the CSV:
 
-  Figure 1 — Execution time vs N  (M fixed)
-  Figure 2 — Execution time vs M  (N fixed)
+    1) constant_density: Execution time vs N (CIM vs BF)
+    2) legacy format: two subplots (N sweep and M sweep)
 
 Each figure shows both CIM and BF with mean ± 1 std error bars.
 
@@ -17,7 +17,6 @@ import os
 import sys
 
 import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
 
 
@@ -76,8 +75,62 @@ def _add_subplot(ax, data: "pd.DataFrame", x_col: str, x_label: str, title: str)
     ax.grid(True, alpha=0.3, which="both")
 
 
+def _annotate_cim_m(ax, data: "pd.DataFrame") -> None:
+    """Annotate CIM points with the M value used for each N."""
+    cim = data[data["method"] == "CIM"].sort_values("N")
+    for _, row in cim.iterrows():
+        ax.annotate(
+            f"M={int(row['M'])}",
+            (row["N"], row["mean_ms"]),
+            textcoords="offset points",
+            xytext=(5, 5),
+            fontsize=8,
+            color=COLORS["CIM"],
+        )
+
+
 def plot_benchmark(csv_path: str) -> None:
     df = pd.read_csv(csv_path)
+
+    if "constant_density" in set(df["study"].astype(str)):
+        cd_data = df[df["study"] == "constant_density"]
+
+        fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+        density = float(cd_data["density"].iloc[0]) if "density" in cd_data else None
+        if density is None:
+            fig.suptitle("CIM vs Brute Force — Constant Density Study", fontsize=12)
+        else:
+            fig.suptitle(
+                "CIM vs Brute Force — Constant Density Study\n"
+                + rf"$\rho = {density:.4f}$",
+                fontsize=12,
+            )
+
+        # Left: linear scale
+        _add_subplot(
+            axes[0],
+            cd_data,
+            "N",
+            x_label="N  (number of particles)",
+            title="Execution time vs N (linear scale)",
+        )
+        _annotate_cim_m(axes[0], cd_data)
+
+        # Right: logarithmic scale
+        _add_subplot(
+            axes[1],
+            cd_data,
+            "N",
+            x_label="N  (number of particles)",
+            title="Execution time vs N (log scale)",
+        )
+        axes[1].set_xscale("log")
+        axes[1].set_yscale("log")
+        _annotate_cim_m(axes[1], cd_data)
+
+        plt.tight_layout()
+        plt.show()
+        return
 
     n_data = df[df["study"] == "N_sweep"]
     m_data = df[df["study"] == "M_sweep"]

@@ -62,6 +62,63 @@ def find_latest_output_dir() -> str:
     return sorted(candidates)[-1]
 
 
+def _is_valid_run_dir(run_dir: str) -> bool:
+    """True when run_dir contains both output.txt and properties.txt."""
+    if not os.path.isdir(run_dir):
+        return False
+    output_path = os.path.join(run_dir, "output.txt")
+    props_path = os.path.join(run_dir, "properties.txt")
+    return os.path.exists(output_path) and os.path.exists(props_path)
+
+
+def resolve_run_dir(user_path: str) -> str:
+    """
+    Resolve a user-provided run directory path.
+
+    Accepts absolute or relative paths. Also tries common fallbacks such as
+    providing only the run id (timestamp folder name).
+    """
+    normalized_user_path = os.path.normpath(user_path.strip())
+    project_root = os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    )
+
+    candidates = []
+
+    # 1) As written by the user (resolved to absolute from current cwd)
+    candidates.append(os.path.abspath(normalized_user_path))
+
+    # 2) If user passed only the run id (or a malformed nested path), try by basename
+    run_id = os.path.basename(normalized_user_path)
+    if run_id:
+        candidates.append(os.path.join(project_root, "simulation", "outputs", run_id))
+        candidates.append(os.path.join(project_root, "outputs", run_id))
+
+    # 3) Try fixing duplicated "simulation/outputs" segments if present
+    duplicated = os.path.join("simulation", "outputs", "simulation", "outputs")
+    if duplicated in normalized_user_path:
+        fixed = normalized_user_path.replace(duplicated, os.path.join("simulation", "outputs"))
+        candidates.append(os.path.abspath(fixed))
+
+    # Remove duplicates while preserving order
+    seen = set()
+    unique_candidates = []
+    for c in candidates:
+        if c not in seen:
+            seen.add(c)
+            unique_candidates.append(c)
+
+    for candidate in unique_candidates:
+        if _is_valid_run_dir(candidate):
+            return candidate
+
+    tested = "\n  - " + "\n  - ".join(unique_candidates)
+    raise FileNotFoundError(
+        "Could not find a valid run directory. "
+        "Expected both output.txt and properties.txt in one of:" + tested
+    )
+
+
 def parse_properties(props_path: str) -> dict:
     """Return a {stripped_key: stripped_value} dict from properties.txt."""
     result = {}
@@ -254,7 +311,7 @@ def visualize(run_dir: str) -> None:
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:
-        run_directory = sys.argv[1]
+        run_directory = resolve_run_dir(sys.argv[1])
     else:
         run_directory = find_latest_output_dir()
 
