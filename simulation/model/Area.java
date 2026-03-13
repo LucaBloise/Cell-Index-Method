@@ -54,26 +54,59 @@ public class Area {
         Random random = new Random();
         particleSet.clear();
 
-        // Track occupied positions by encoding (x,y) bit patterns into a single long.
-        // This guarantees no two particles share the exact same floating-point coordinates.
-        Set<Long> usedPositions = new HashSet<>();
+        // Rejection sampling without overlaps.
+        // Touching is allowed; overlap means center distance < (r1 + r2).
+        final int maxAttemptsPerParticle = Math.max(10_000, N * 50);
 
         for (int i = 0; i < N; i++) {
-            float x, y;
-            long posKey;
-            do {
-                x = random.nextFloat() * L;
-                y = random.nextFloat() * L;
-                posKey = ((long) Float.floatToIntBits(x) << 32)
-                       | (Float.floatToIntBits(y) & 0xFFFFFFFFL);
-            } while (usedPositions.contains(posKey));
-
-            usedPositions.add(posKey);
-
             // Fixed radius when rMin == rMax, otherwise uniform random in [rMin, rMax]
             float r = (rMin == rMax) ? rMin : rMin + random.nextFloat() * (rMax - rMin);
-            particleSet.add(new Particle(x, y, r));
+
+            boolean placed = false;
+            for (int attempt = 0; attempt < maxAttemptsPerParticle; attempt++) {
+                float x;
+                float y;
+
+                if (periodic) {
+                    // In periodic mode there are no walls.
+                    x = random.nextFloat() * L;
+                    y = random.nextFloat() * L;
+                } else {
+                    // Keep full particle inside the box with hard-wall boundaries.
+                    float span = L - 2 * r;
+                    if (span < 0) {
+                        throw new IllegalArgumentException(
+                            "Particle radius " + r + " does not fit inside box L=" + L);
+                    }
+                    x = r + random.nextFloat() * span;
+                    y = r + random.nextFloat() * span;
+                }
+
+                Particle candidate = new Particle(x, y, r);
+                if (!overlapsAny(candidate)) {
+                    particleSet.add(candidate);
+                    placed = true;
+                    break;
+                }
+            }
+
+            if (!placed) {
+                throw new IllegalStateException(
+                    "Could not place non-overlapping particle " + (i + 1) + "/" + N
+                    + " after " + maxAttemptsPerParticle + " attempts. "
+                    + "Try reducing N or radii, or increasing L.");
+            }
         }
+    }
+
+    private boolean overlapsAny(Particle candidate) {
+        for (Particle p : particleSet) {
+            float centerDist = dist(candidate, p);
+            if (centerDist < candidate.getR() + p.getR()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public Set<Particle> getParticleSet() { return particleSet; }
