@@ -118,9 +118,9 @@ def visualize(run_dir: str) -> None:
     props     = parse_properties(props_path)
     particles = parse_output(output_path)
 
-    L  = float(props["L  (side length)"].split()[0])
+    L  = float(props["L  (side length)"].split()[0].replace(",", "."))
     M  = int(  props["M  (cells / side)"].split()[0])
-    rc = float(props["rc (cutoff)"].split()[0])
+    rc = float(props["rc (cutoff)"].split()[0].replace(",", "."))
     cell_size = L / M
 
     method_raw  = props.get("Method", "")
